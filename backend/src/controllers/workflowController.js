@@ -1,0 +1,34 @@
+import { failure, success } from '../utils/apiResponse.js';
+import * as washing from '../services/washingService.js';
+import * as labor from '../services/laborService.js';
+import * as purchase from '../services/purchaseService.js';
+import * as production from '../services/productionService.js';
+import * as customer from '../services/customerService.js';
+import * as sales from '../services/salesService.js';
+
+function run(action, message, status = 200) { return async (req, res, next) => { try { return success(res, await action(req), message, status); } catch (error) { return error.code ? failure(res, error.message, error.code, error.status || 400) : next(error); } }; }
+const bodyWithUser = req => ({ ...req.body, userId: req.user.id });
+export const getWashing = run(req => washing.listWashing(req.query), 'Washing batches loaded');
+export const getWashingById = run(req => washing.getWashing(req.params.id), 'Washing batch loaded');
+export const postWashing = run(req => washing.createWashing(bodyWithUser(req)), 'Washing batch created', 201);
+export const getLaborers = run(() => labor.listLaborers(), 'Laborers loaded');
+export const postLaborer = run(req => labor.createLaborer(bodyWithUser(req)), 'Laborer created', 201);
+export const getLabor = run(req => labor.listLabor(req.query), 'Labor records loaded');
+export const getLaborById = run(req => labor.getLabor(req.params.id), 'Labor record loaded');
+export const postLabor = run(req => labor.createLabor(bodyWithUser(req)), 'Labor record created', 201);
+export const putLabor = run(req => labor.updateLabor(req.params.id, bodyWithUser(req)), 'Labor record updated');
+export const getPurchases = run(() => purchase.listPurchases(), 'Purchases loaded');
+export const postPurchase = run(req => purchase.createPurchase(bodyWithUser(req)), 'Purchase created', 201);
+export const getProduction = run(() => production.listProduction(), 'Production batches loaded');
+export const getProductionById = run(req => production.getProduction(req.params.id), 'Production batch loaded');
+export const postProduction = run(req => production.createProduction(bodyWithUser(req)), 'Production batch created', 201);
+export const getCustomers = run(() => customer.listCustomers(), 'Customers loaded');
+export const getCustomer = run(req => customer.getCustomer(req.params.id), 'Customer loaded');
+export const postCustomer = run(req => customer.createCustomer(bodyWithUser(req)), 'Customer created', 201);
+export const getSales = run(() => sales.listSales(), 'Sales loaded');
+export const getSale = run(req => sales.getSale(req.params.id), 'Sale loaded');
+export const postSale = run(req => sales.createSale(bodyWithUser(req)), 'Sale created', 201);
+export const getPayments = run(() => sales.listPayments(), 'Payments loaded');
+export const postPayment = run(req => sales.createPayment(bodyWithUser(req)), 'Payment recorded', 201);
+export const getCustomerBalance = run(req => sales.customerBalance(req.params.id), 'Customer balance loaded');
+export const getCustomerDebts = run(req => sales.customerDebts(req.params.id), 'Customer debts loaded');

@@ -1,0 +1,41 @@
+import { Router } from 'express';
+import { body, param } from 'express-validator';
+import { authenticate, authorize } from '../middleware/auth.js';
+import { validateRequest } from '../middleware/validateRequest.js';
+import * as controller from '../controllers/workflowController.js';
+
+const router = Router();
+const id = param('id').isInt({ min: 1 });
+const date = body('date').isISO8601();
+const productionDate = body('productionDate').isISO8601();
+const saleDate = body('saleDate').isISO8601();
+const paymentDate = body('paymentDate').isISO8601();
+const owner = [authenticate, authorize('OWNER')];
+const protectedRoute = [authenticate];
+
+router.get('/washing', ...protectedRoute, controller.getWashing);
+router.get('/washing/:id', ...protectedRoute, id, validateRequest, controller.getWashingById);
+router.post('/washing', ...owner, date, body('rawPinanitanBangan').isFloat({ gt: 0 }), body('washedPinanitanBangan').isFloat({ gt: 0 }), validateRequest, controller.postWashing);
+router.get('/laborers', ...protectedRoute, controller.getLaborers);
+router.post('/laborers', ...owner, body('name').trim().notEmpty(), validateRequest, controller.postLaborer);
+router.get('/labor', ...protectedRoute, controller.getLabor);
+router.get('/labor/:id', ...protectedRoute, id, validateRequest, controller.getLaborById);
+router.post('/labor', ...owner, body('laborerId').isInt({ min: 1 }), body('workDate').isISO8601(), body('workType').trim().notEmpty(), body('amount').isFloat({ gt: 0 }), validateRequest, controller.postLabor);
+router.put('/labor/:id', ...owner, id, body('workType').trim().notEmpty(), body('amount').isFloat({ gt: 0 }), validateRequest, controller.putLabor);
+router.get('/purchases', ...protectedRoute, controller.getPurchases);
+router.post('/purchases', ...owner, body('itemId').isInt({ min: 1 }), body('purchaseDate').isISO8601(), body('quantity').isFloat({ gt: 0 }), body('unitCost').isFloat({ min: 0 }), validateRequest, controller.postPurchase);
+router.get('/production', ...protectedRoute, controller.getProduction);
+router.get('/production/:id', ...protectedRoute, id, validateRequest, controller.getProductionById);
+router.post('/production', ...owner, productionDate, body('washedPinanitanItemId').isInt({ min: 1 }), body('washedPinanitanQuantity').isFloat({ gt: 0 }), body('bambooHandleItemId').isInt({ min: 1 }), body('bambooHandleQuantity').isFloat({ gt: 0 }), body('polyCordItemId').isInt({ min: 1 }), body('polyCordQuantity').isFloat({ gt: 0 }), body('finishedBroomItemId').isInt({ min: 1 }), body('broomsProduced').isFloat({ gt: 0 }), validateRequest, controller.postProduction);
+router.get('/customers', ...protectedRoute, controller.getCustomers);
+router.get('/customers/:id', ...protectedRoute, id, validateRequest, controller.getCustomer);
+router.post('/customers', ...owner, body('name').trim().notEmpty(), validateRequest, controller.postCustomer);
+router.get('/customers/:id/balance', ...protectedRoute, id, validateRequest, controller.getCustomerBalance);
+router.get('/customers/:id/debts', ...protectedRoute, id, validateRequest, controller.getCustomerDebts);
+router.get('/sales', ...protectedRoute, controller.getSales);
+router.get('/sales/:id', ...protectedRoute, id, validateRequest, controller.getSale);
+router.post('/sales', ...owner, saleDate, body('customerId').isInt({ min: 1 }), body('items').isArray({ min: 1 }), body('amountPaid').optional().isFloat({ min: 0 }), validateRequest, controller.postSale);
+router.get('/payments', ...protectedRoute, controller.getPayments);
+router.post('/payments', ...owner, body('saleId').isInt({ min: 1 }), paymentDate, body('amount').isFloat({ gt: 0 }), validateRequest, controller.postPayment);
+
+export default router;

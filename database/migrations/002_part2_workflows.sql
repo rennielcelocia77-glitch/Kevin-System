@@ -1,0 +1,44 @@
+USE broom_business;
+
+ALTER TABLE labor_records ADD COLUMN created_by INT UNSIGNED NULL;
+ALTER TABLE labor_records ADD CONSTRAINT fk_labor_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE labor_records ADD CONSTRAINT fk_labor_production FOREIGN KEY (production_id) REFERENCES production_transactions(id) ON DELETE SET NULL;
+ALTER TABLE production_transactions ADD COLUMN material_cost DECIMAL(14,2) NOT NULL DEFAULT 0;
+ALTER TABLE production_transactions ADD COLUMN labor_cost DECIMAL(14,2) NOT NULL DEFAULT 0;
+ALTER TABLE production_transactions ADD COLUMN total_cost DECIMAL(14,2) NOT NULL DEFAULT 0;
+
+CREATE TABLE customers (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(160) NOT NULL,
+  contact VARCHAR(120), address VARCHAR(255),
+  status ENUM('ACTIVE', 'INACTIVE') NOT NULL DEFAULT 'ACTIVE', notes TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+CREATE TABLE sales (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  customer_id INT UNSIGNED, sale_date DATE NOT NULL, reference_number VARCHAR(80),
+  total_amount DECIMAL(14,2) NOT NULL, status ENUM('COMPLETED', 'CANCELLED') NOT NULL DEFAULT 'COMPLETED',
+  notes TEXT, created_by INT UNSIGNED, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE TABLE sale_items (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  sale_id BIGINT UNSIGNED NOT NULL, inventory_item_id INT UNSIGNED NOT NULL,
+  quantity DECIMAL(14,3) NOT NULL, unit VARCHAR(30) NOT NULL,
+  unit_price DECIMAL(14,2) NOT NULL, subtotal DECIMAL(14,2) NOT NULL,
+  FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
+  FOREIGN KEY (inventory_item_id) REFERENCES inventory_items(id)
+);
+CREATE TABLE payments (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  sale_id BIGINT UNSIGNED NOT NULL, customer_id INT UNSIGNED,
+  payment_date DATE NOT NULL, amount DECIMAL(14,2) NOT NULL,
+  reference_number VARCHAR(80), notes TEXT, created_by INT UNSIGNED,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (sale_id) REFERENCES sales(id),
+  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT chk_payment_amount CHECK (amount > 0)
+);

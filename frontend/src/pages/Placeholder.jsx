@@ -1,0 +1,1 @@
+export default function Placeholder({ title }) { return <section className="page-section"><p className="eyebrow">Foundation module</p><h2>{title}</h2><div className="empty-state"><strong>This module is prepared for Part 2.</strong><p>The API-first structure is ready for the workflow to be added without moving business rules into the web app.</p></div></section>; }
