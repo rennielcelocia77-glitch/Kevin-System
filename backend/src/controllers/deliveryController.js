@@ -25,6 +25,7 @@ export async function recordDelivery(req, res, next) {
     return success(res, { deliveryId }, 'Delivery created', 201);
   } catch (error) {
     if (error.code === 'SALE_NOT_FOUND') return failure(res, error.message, error.code, 404);
+    if (error.code === 'CUSTOMER_MISMATCH') return failure(res, error.message, error.code, 422);
     return next(error);
   }
 }

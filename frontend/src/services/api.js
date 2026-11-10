@@ -1,4 +1,6 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+// Keep browser requests on the app origin by default so Vite can proxy them.
+// Set VITE_API_URL only when the frontend and API are deployed separately.
+const API_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 
 export async function apiRequest(path, options = {}) {
   const token = localStorage.getItem('broom_token');
@@ -6,13 +8,24 @@ export async function apiRequest(path, options = {}) {
     ...options,
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options.headers }
   });
-  const payload = await response.json();
+  let payload;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = { message: response.statusText || 'The server returned an unreadable response' };
+  }
+  if (response.status === 401) {
+    localStorage.removeItem('broom_token');
+    localStorage.removeItem('broom_user');
+    window.dispatchEvent(new Event('broom:unauthorized'));
+  }
   if (!response.ok) throw new Error(payload.message || 'Request failed');
   return payload;
 }
 
 export const api = {
   login: (credentials) => apiRequest('/auth/login', { method: 'POST', body: JSON.stringify(credentials) }),
+  logout: () => apiRequest('/auth/logout', { method: 'POST' }),
   me: () => apiRequest('/auth/me'),
   inventory: () => apiRequest('/inventory'),
   inventoryItem: (id) => apiRequest(`/inventory/${id}`),
@@ -56,8 +69,8 @@ export const api = {
     inventory: (filters = {}) => apiRequest(`/reports/inventory?${new URLSearchParams(filters).toString()}`),
     production: (filters = {}) => apiRequest(`/reports/production?${new URLSearchParams(filters).toString()}`)
   },
-  history: (filters = {}) => apiRequest(`/history?${new URLSearchParams(filters).toString()}`)
-  ,employeeAdvances: () => apiRequest('/employee-advances')
-  ,addEmployeeAdvance: (data) => apiRequest('/employee-advances', { method: 'POST', body: JSON.stringify(data) })
-  ,payEmployeeAdvance: (id, data) => apiRequest(`/employee-advances/${id}/payments`, { method: 'POST', body: JSON.stringify(data) })
+  history: (filters = {}) => apiRequest(`/history?${new URLSearchParams(filters).toString()}`),
+  employeeAdvances: () => apiRequest('/employee-advances'),
+  addEmployeeAdvance: (data) => apiRequest('/employee-advances', { method: 'POST', body: JSON.stringify(data) }),
+  payEmployeeAdvance: (id, data) => apiRequest(`/employee-advances/${id}/payments`, { method: 'POST', body: JSON.stringify(data) })
 };

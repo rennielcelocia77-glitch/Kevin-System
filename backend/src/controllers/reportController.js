@@ -1,4 +1,4 @@
-import { getDailyReport, getMonthlyReport, getYearlyReport, getDashboardData, getInventoryReport, getProductionReport } from '../services/reportingService.js';
+import { getDailyReport, getMonthlyReport, getYearlyReport, getDashboardData, getInventoryReport, getProductionReport, businessDate } from '../services/reportingService.js';
 import { success, failure } from '../utils/apiResponse.js';
 
 export async function getDashboard(req, res, next) {
@@ -38,8 +38,8 @@ export async function getYearlyReportHandler(req, res, next) {
 export async function getInventoryReportHandler(req, res, next) {
   try {
     const { startDate, endDate } = req.query;
-    const end = endDate || new Date().toISOString().split('T')[0];
-    const start = startDate || new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0];
+    const end = endDate || businessDate();
+    const start = startDate || `${businessDate().slice(0, 4)}-01-01`;
     const report = await getInventoryReport(start, end);
     return success(res, report, 'Inventory report generated');
   } catch (error) { return next(error); }
@@ -48,8 +48,8 @@ export async function getInventoryReportHandler(req, res, next) {
 export async function getProductionReportHandler(req, res, next) {
   try {
     const { startDate, endDate } = req.query;
-    const end = endDate || new Date().toISOString().split('T')[0];
-    const start = startDate || new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0];
+    const end = endDate || businessDate();
+    const start = startDate || `${businessDate().slice(0, 4)}-01-01`;
     const report = await getProductionReport(start, end);
     return success(res, report, 'Production report generated');
   } catch (error) { return next(error); }

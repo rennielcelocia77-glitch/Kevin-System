@@ -1,16 +1,19 @@
 import { pool, withTransaction } from '../config/db.js';
-import { failure } from '../utils/apiResponse.js';
 
 export async function createDelivery({ saleId, customerId, deliveryDate, deliveryAddress, driverName, notes, userId }) {
   return withTransaction(async (connection) => {
     // Verify sale exists
-    const [sales] = await connection.query('SELECT id, customer_id FROM sales WHERE id = ? AND status = "COMPLETED"', [saleId]);
+    const [sales] = await connection.query('SELECT id, customer_id FROM sales WHERE id = ? AND status = \'COMPLETED\'', [saleId]);
     if (!sales.length) throw Object.assign(new Error('Sale not found or not completed'), { code: 'SALE_NOT_FOUND' });
+    const saleCustomerId = sales[0].customer_id;
+    if (customerId && Number(customerId) !== Number(saleCustomerId)) {
+      throw Object.assign(new Error('Delivery customer must match the sale customer'), { code: 'CUSTOMER_MISMATCH' });
+    }
     
     const [result] = await connection.query(`
       INSERT INTO deliveries (sale_id, customer_id, delivery_date, delivery_address, driver_name, notes, created_by, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')
-    `, [saleId, customerId, deliveryDate, deliveryAddress, driverName, notes, userId]);
+    `, [saleId, saleCustomerId, deliveryDate, deliveryAddress, driverName, notes, userId]);
     
     await connection.query(
       'INSERT INTO audit_logs (user_id, action, entity, entity_id, metadata) VALUES (?, ?, ?, ?, ?)',

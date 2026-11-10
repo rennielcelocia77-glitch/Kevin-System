@@ -1,14 +1,23 @@
 import { pool } from '../config/db.js';
 
+export function businessDate(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function businessYearMonth(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit' }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return { year: Number(values.year), month: Number(values.month) };
+}
+
 // Helper: Calculate customer balance
 export async function getCustomerBalance(customerId) {
   const [rows] = await pool.query(`
-    SELECT 
-      COALESCE(SUM(s.total_amount), 0) as total_sales,
-      COALESCE(SUM(p.amount), 0) as total_paid
-    FROM sales s
-    LEFT JOIN payments p ON s.id = p.sale_id
-    WHERE s.customer_id = ? AND s.status = 'COMPLETED'
+    SELECT
+      COALESCE((SELECT SUM(s.total_amount) FROM sales s WHERE s.customer_id = ? AND s.status = 'COMPLETED'), 0) AS total_sales,
+      COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.customer_id = ?), 0) AS total_paid
   `, [customerId]);
   
   const { total_sales, total_paid } = rows[0];
@@ -69,8 +78,8 @@ export async function getDailyReport(reportDate) {
 
 // Monthly Report
 export async function getMonthlyReport(month, year) {
-  const startDate = new Date(year, month - 1, 1).toISOString().split('T')[0];
-  const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+  const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+  const endDate = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`;
   
   const [sales] = await pool.query(`
     SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total
@@ -129,7 +138,7 @@ export async function getMonthlyReport(month, year) {
 
 // Dashboard data
 export async function getDashboardData() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = businessDate();
   
   // Today's data
   const [todaySales] = await pool.query(`
@@ -147,8 +156,9 @@ export async function getDashboardData() {
   );
   
   // This month data
-  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-  const monthEnd = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0];
+  const { year, month } = businessYearMonth();
+  const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
+  const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`;
   
   const [monthSales] = await pool.query(`
     SELECT COALESCE(SUM(total_amount), 0) as total FROM sales WHERE sale_date BETWEEN ? AND ? AND status = 'COMPLETED'
@@ -163,18 +173,26 @@ export async function getDashboardData() {
     'SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE expense_date BETWEEN ? AND ?',
     [monthStart, monthEnd]
   );
+
+  const [monthLabor] = await pool.query(
+    'SELECT COALESCE(SUM(total_amount), 0) as total FROM labor_records WHERE work_date BETWEEN ? AND ?',
+    [monthStart, monthEnd]
+  );
   
   // Inventory
   const [inventory] = await pool.query('SELECT item_name, current_quantity, unit, reorder_level FROM inventory_items WHERE is_active = 1 ORDER BY item_name');
   
   // Outstanding debt
   const [debt] = await pool.query(`
-    SELECT COALESCE(SUM(s.total_amount - COALESCE(SUM(p.amount), 0)), 0) as outstanding
-    FROM sales s
-    LEFT JOIN payments p ON s.id = p.sale_id
-    WHERE s.status = 'COMPLETED'
-    GROUP BY s.id
-    HAVING COALESCE(s.total_amount - COALESCE(SUM(p.amount), 0), 0) > 0
+    SELECT COALESCE(SUM(balance), 0) AS outstanding
+    FROM (
+      SELECT s.total_amount - COALESCE(SUM(p.amount), 0) AS balance
+      FROM sales s
+      LEFT JOIN payments p ON p.sale_id = s.id
+      WHERE s.status = 'COMPLETED'
+      GROUP BY s.id, s.total_amount
+    ) sale_balances
+    WHERE balance > 0
   `);
   
   const [lowStock] = await pool.query(`
@@ -193,11 +211,12 @@ export async function getDashboardData() {
       sales: monthSales[0].total,
       payments: monthPayments[0].total,
       expenses: monthExpenses[0].total,
-      profit: monthSales[0].total - monthExpenses[0].total
+      labor: monthLabor[0].total,
+      profit: monthSales[0].total - monthExpenses[0].total - monthLabor[0].total
     },
     inventory,
     alerts: {
-      outstandingDebt: debt.reduce((sum, row) => sum + (row.outstanding || 0), 0),
+      outstandingDebt: debt[0].outstanding,
       lowStockItems: lowStock.length,
       lowStock
     }

@@ -1,5 +1,5 @@
 import { pool, withTransaction } from '../config/db.js';
-import { audit, businessError, consumeItem, lockItem, positive, produceItem } from './workflowHelpers.js';
+import { audit, businessError, consumeItem, currency, lockItem, positive, produceItem } from './workflowHelpers.js';
 
 export async function listProduction() {
   const [rows] = await pool.query(`SELECT p.*, i.item_name AS output_item_name FROM production_transactions p JOIN inventory_items i ON i.id = p.output_item_id ORDER BY p.production_date DESC, p.id DESC`);
@@ -27,16 +27,18 @@ export async function createProduction({ productionDate, washedPinanitanItemId, 
     const handles = await lockItem(connection, bambooHandleItemId, 'PIECE', 'RAW_MATERIAL');
     const cord = await lockItem(connection, polyCordItemId, null, 'RAW_MATERIAL');
     const broom = await lockItem(connection, finishedBroomItemId, 'PIECE', 'FINISHED_PRODUCT');
-    const materialCost = Number(washed.cost_per_unit) * Number(washedPinanitanQuantity) + Number(handles.cost_per_unit) * Number(bambooHandleQuantity) + Number(cord.cost_per_unit) * Number(polyCordQuantity);
+    const materialCost = currency(Number(washed.cost_per_unit) * Number(washedPinanitanQuantity) + Number(handles.cost_per_unit) * Number(bambooHandleQuantity) + Number(cord.cost_per_unit) * Number(polyCordQuantity), 'Material cost');
     let laborCost = 0;
     for (const entry of labor) {
       const amount = Number(entry.amount);
       if (!entry.laborerId || !Number.isFinite(amount) || amount < 0) throw businessError('Each labor record requires a valid laborer and amount', 'INVALID_LABOR');
+      entry.amount = currency(amount, 'Labor amount');
       const [workers] = await connection.query('SELECT id FROM employees WHERE id = ? AND status = \'ACTIVE\'', [entry.laborerId]);
       if (!workers[0]) throw businessError('Laborer not found', 'LABORER_NOT_FOUND', 404);
-      laborCost += amount;
+      laborCost = currency(laborCost + entry.amount, 'Labor cost');
     }
-    const [result] = await connection.query(`INSERT INTO production_transactions (production_date, output_item_id, output_quantity, material_cost, labor_cost, total_cost, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [productionDate, broom.id, broomsProduced, materialCost, laborCost, materialCost + laborCost, notes || null, userId]);
+    const totalCost = currency(materialCost + laborCost, 'Production cost');
+    const [result] = await connection.query(`INSERT INTO production_transactions (production_date, output_item_id, output_quantity, material_cost, labor_cost, total_cost, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [productionDate, broom.id, broomsProduced, materialCost, laborCost, totalCost, notes || null, userId]);
     const materials = [[washed, washedPinanitanQuantity], [handles, bambooHandleQuantity], [cord, polyCordQuantity]];
     for (const [item, quantity] of materials) {
       await consumeItem(connection, item, Number(quantity), 'PRODUCTION_CONSUMPTION', 'PRODUCTION', result.insertId, userId, notes);
@@ -45,6 +47,6 @@ export async function createProduction({ productionDate, washedPinanitanItemId, 
     await produceItem(connection, broom, Number(broomsProduced), 'PRODUCTION_OUTPUT', 'PRODUCTION', result.insertId, userId, notes);
     for (const entry of labor) await connection.query(`INSERT INTO labor_records (laborer_id, work_date, work_type, description, quantity, unit, total_amount, payment_status, production_id, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, 'PAID', ?, ?, ?)`, [entry.laborerId, productionDate, entry.workType || 'Broom Production', entry.description || null, entry.quantity || null, entry.unit || 'PIECE', entry.amount, result.insertId, entry.notes || null, userId]);
     await audit(connection, userId, 'PRODUCTION_CREATED', 'production_transactions', result.insertId, { broomsProduced, materialCost, laborCost });
-    return { id: result.insertId, broomsProduced, materialCost, laborCost, totalCost: materialCost + laborCost };
+    return { id: result.insertId, broomsProduced, materialCost, laborCost, totalCost };
   });
 }

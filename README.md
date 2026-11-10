@@ -20,11 +20,11 @@ Prerequisites: Node.js 20+, npm, and MySQL 8+.
 5. Start the API with `npm run dev:backend`.
 6. Start the web app with `npm run dev:frontend`.
 
-The API runs at `http://localhost:5008`; the web app runs at `http://localhost:5182`. For access from another device on the same network, find this computer's LAN IP (for example, with `ipconfig`) and open `http://<LAN-IP>:5182`. Vite proxies the browser's `/api` requests to the backend, so the frontend does not need to be rebuilt for that IP. Windows Firewall must allow inbound TCP traffic on port `5182`.
+The API runs at `http://localhost:5008`; the web app runs at `http://localhost:5182`. The frontend uses same-origin `/api` requests and Vite proxies them to the backend. For access from another device on the same network, find this computer's LAN IP (for example, with `ipconfig`) and open `http://<LAN-IP>:5182`; Windows Firewall must allow inbound TCP traffic on port `5182`. When deploying the frontend and API separately, set `VITE_API_URL` to the API base (including `/api`) and set the backend `CLIENT_URL` to the frontend origin.
 
 Seed accounts are development-only: `owner` and `employee`, both using password `broom-dev-2026`. Never reuse this password outside local development.
 
-## Part 1 API
+## API
 
 - `GET /api/health`
 - `POST /api/auth/login`
@@ -32,15 +32,15 @@ Seed accounts are development-only: `owner` and `employee`, both using password 
 - `GET /api/auth/me`
 - `GET /api/inventory`
 - `POST /api/inventory/opening-stock` (OWNER)
-- `GET|POST /api/washing` (POST is OWNER-only)
-- `GET|POST /api/laborers` and `GET|POST /api/labor`
-- `GET|POST /api/purchases`
-- `GET|POST /api/production`
-- `GET|POST /api/customers`
-- `GET|POST /api/sales`
-- `GET|POST /api/payments`
-- `GET /api/customers/:id/balance`
-- `GET /api/customers/:id/debts`
+- `GET|POST /api/washing`, `/api/laborers`, `/api/labor`, `/api/purchases`, `/api/production`, `/api/customers`, `/api/sales`, and `/api/payments`
+- `GET|POST /api/suppliers`
+- `GET|POST|PUT /api/deliveries`
+- `GET|POST /api/expenses`, including gasoline entries
+- `GET|POST /api/employee-advances` and `POST /api/employee-advances/:id/payments`
+- `GET /api/reports/{dashboard,daily,monthly,yearly,inventory,production}` and `GET /api/history`
+- `GET /api/customers/:id/balance` and `/api/customers/:id/debts`
+
+All write operations that change stock, sales, customers, suppliers, labor, or employee advances require the OWNER role. Authenticated employees can view records and manage deliveries and expenses.
 
 All responses use `{ success, message, data }` on success and `{ success, message, error }` on failure.
 

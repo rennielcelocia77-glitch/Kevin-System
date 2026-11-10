@@ -4,7 +4,7 @@ export async function listHistory({ startDate, endDate, type } = {}) {
   const conditions = [];
   const params = [];
   if (startDate) { conditions.push('activity_date >= ?'); params.push(startDate); }
-  if (endDate) { conditions.push('activity_date <= ?'); params.push(endDate); }
+  if (endDate) { conditions.push('activity_date < DATE_ADD(?, INTERVAL 1 DAY)'); params.push(endDate); }
   if (type) { conditions.push('activity_type = ?'); params.push(type); }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const [rows] = await pool.query(`

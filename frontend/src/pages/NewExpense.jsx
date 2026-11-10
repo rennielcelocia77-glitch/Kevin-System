@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
+import { localDate } from '../utils/date';
 
 export default function NewExpense() {
   const [expenseType, setExpenseType] = useState('general');
-  const [form, setForm] = useState({ category: 'GASOLINE', description: '', amount: '', expenseDate: new Date().toISOString().split('T')[0], notes: '' });
-  const [gasolineForm, setGasolineForm] = useState({ quantityLiters: '', pricePerLiter: '', totalAmount: '', expenseDate: new Date().toISOString().split('T')[0], vehicleDescription: '', notes: '' });
+  const [form, setForm] = useState({ category: 'GASOLINE', description: '', amount: '', expenseDate: localDate(), notes: '' });
+  const [gasolineForm, setGasolineForm] = useState({ quantityLiters: '', pricePerLiter: '', totalAmount: '', expenseDate: localDate(), vehicleDescription: '', notes: '' });
   const [message, setMessage] = useState('');
   const navigate = useNavigate();
 

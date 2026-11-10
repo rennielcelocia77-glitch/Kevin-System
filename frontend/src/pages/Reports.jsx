@@ -72,6 +72,7 @@ export default function Reports() {
                 <div><strong>Sales:</strong> ₱{data.month.sales.toLocaleString()}</div>
                 <div><strong>Cash Collected:</strong> ₱{data.month.payments.toLocaleString()}</div>
                 <div><strong>Expenses:</strong> ₱{data.month.expenses.toLocaleString()}</div>
+                <div><strong>Labor Cost:</strong> ₱{data.month.labor.toLocaleString()}</div>
                 <div><strong>Profit:</strong> ₱{data.month.profit.toLocaleString()}</div>
               </div>
               <h3>Inventory Status</h3>

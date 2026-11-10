@@ -1,5 +1,5 @@
 import { pool, withTransaction } from '../config/db.js';
-import { audit, businessError, consumeItem, lockItem, paymentStatus, positive } from './workflowHelpers.js';
+import { audit, businessError, consumeItem, currency, lockItem, paymentStatus, positive } from './workflowHelpers.js';
 
 async function saleSummary(connection, saleId) {
   const [rows] = await connection.query(`SELECT s.*, COALESCE(SUM(p.amount), 0) AS amount_paid, s.total_amount - COALESCE(SUM(p.amount), 0) AS balance FROM sales s LEFT JOIN payments p ON p.sale_id = s.id WHERE s.id = ? GROUP BY s.id`, [saleId]);
@@ -17,13 +17,14 @@ export async function getSale(id) {
 export async function createSale({ customerId, saleDate, referenceNumber, items, amountPaid = 0, paymentDate, paymentReference, notes, userId }) {
   if (!customerId) throw businessError('Customer is required', 'CUSTOMER_NOT_FOUND', 422);
   if (!Array.isArray(items) || items.length === 0) throw businessError('At least one sale item is required', 'INVALID_SALE_ITEMS');
-  const paid = Number(amountPaid || 0); if (!Number.isFinite(paid) || paid < 0) throw businessError('Payment cannot be negative', 'INVALID_PAYMENT');
+  const rawPaid = Number(amountPaid || 0); if (!Number.isFinite(rawPaid) || rawPaid < 0) throw businessError('Payment cannot be negative', 'INVALID_PAYMENT');
+  const paid = currency(rawPaid, 'Payment');
   return withTransaction(async (connection) => {
     const [customers] = await connection.query('SELECT id FROM customers WHERE id = ? AND status = \'ACTIVE\'', [customerId]); if (!customers[0]) throw businessError('Customer not found', 'CUSTOMER_NOT_FOUND', 404);
     const prepared = []; let total = 0;
     for (const entry of items) {
-      const quantity = positive(entry.quantity, 'Sale quantity'); const price = Number(entry.unitPrice); if (!Number.isFinite(price) || price < 0) throw businessError('Unit price is invalid', 'INVALID_AMOUNT');
-      const item = await lockItem(connection, entry.inventoryItemId, 'PIECE', 'FINISHED_PRODUCT'); const subtotal = quantity * price; total += subtotal; prepared.push({ item, quantity, price, subtotal });
+      const quantity = positive(entry.quantity, 'Sale quantity'); const price = currency(entry.unitPrice, 'Unit price');
+      const item = await lockItem(connection, entry.inventoryItemId, 'PIECE', 'FINISHED_PRODUCT'); const subtotal = currency(quantity * price, 'Sale subtotal'); total = currency(total + subtotal, 'Sale total'); prepared.push({ item, quantity, price, subtotal });
     }
     if (paid > total) throw businessError('Payment cannot exceed sale total', 'INVALID_PAYMENT');
     const [sale] = await connection.query('INSERT INTO sales (customer_id, sale_date, reference_number, total_amount, notes, created_by) VALUES (?, ?, ?, ?, ?, ?)', [customerId, saleDate, referenceNumber || null, total, notes || null, userId]);
@@ -35,8 +36,11 @@ export async function createSale({ customerId, saleDate, referenceNumber, items,
 }
 
 export async function createPayment({ saleId, paymentDate, amount, referenceNumber, notes, userId }) {
-  const payment = positive(amount, 'Payment amount');
+  const payment = currency(positive(amount, 'Payment amount'), 'Payment amount');
+  if (payment <= 0) throw businessError('Payment amount must be at least one cent', 'INVALID_PAYMENT');
   return withTransaction(async (connection) => {
+    const [lockedSales] = await connection.query('SELECT id FROM sales WHERE id = ? FOR UPDATE', [saleId]);
+    if (!lockedSales[0]) throw businessError('Sale not found', 'SALE_NOT_FOUND', 404);
     const sale = await saleSummary(connection, saleId); if (sale.status === 'CANCELLED') throw businessError('Cannot pay a cancelled sale', 'SALE_CANCELLED');
     const balance = Number(sale.balance); if (payment > balance) throw businessError('Payment cannot exceed outstanding balance', 'PAYMENT_EXCEEDS_BALANCE', 422);
     const [result] = await connection.query('INSERT INTO payments (sale_id, customer_id, payment_date, amount, reference_number, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)', [saleId, sale.customer_id, paymentDate, payment, referenceNumber || null, notes || null, userId]);
@@ -44,5 +48,5 @@ export async function createPayment({ saleId, paymentDate, amount, referenceNumb
   });
 }
 export async function listPayments() { const [rows] = await pool.query(`SELECT p.*, c.name AS customer_name FROM payments p LEFT JOIN customers c ON c.id = p.customer_id ORDER BY p.payment_date DESC, p.id DESC`); return rows; }
-export async function customerBalance(customerId) { const [rows] = await pool.query(`SELECT c.id, c.name, COALESCE(SUM(s.total_amount), 0) AS total_sales, COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.customer_id = c.id), 0) AS total_paid FROM customers c LEFT JOIN sales s ON s.customer_id = c.id AND s.status = 'COMPLETED' WHERE c.id = ? GROUP BY c.id`, [customerId]); const row = rows[0]; if (!row) throw businessError('Customer not found', 'CUSTOMER_NOT_FOUND', 404); return { ...row, balance: Number(row.total_sales) - Number(row.total_paid) }; }
+export async function customerBalance(customerId) { const [rows] = await pool.query(`SELECT c.id, c.name, COALESCE((SELECT SUM(s.total_amount) FROM sales s WHERE s.customer_id = c.id AND s.status = 'COMPLETED'), 0) AS total_sales, COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.customer_id = c.id), 0) AS total_paid FROM customers c WHERE c.id = ?`, [customerId]); const row = rows[0]; if (!row) throw businessError('Customer not found', 'CUSTOMER_NOT_FOUND', 404); return { ...row, balance: Number(row.total_sales) - Number(row.total_paid) }; }
 export async function customerDebts(customerId) { await customerBalance(customerId); const [rows] = await pool.query(`SELECT s.id, s.sale_date, s.total_amount, COALESCE(SUM(p.amount), 0) amount_paid, s.total_amount - COALESCE(SUM(p.amount), 0) balance FROM sales s LEFT JOIN payments p ON p.sale_id = s.id WHERE s.customer_id = ? AND s.status = 'COMPLETED' GROUP BY s.id HAVING balance > 0 ORDER BY s.sale_date`, [customerId]); return rows; }

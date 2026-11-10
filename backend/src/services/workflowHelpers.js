@@ -8,6 +8,12 @@ export function positive(value, name) {
   return number;
 }
 
+export function currency(value, name = 'Amount') {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) throw businessError(`${name} must be zero or greater`, 'INVALID_AMOUNT');
+  return Number((Math.round((amount + Number.EPSILON) * 100) / 100).toFixed(2));
+}
+
 export async function lockItem(connection, itemId, expectedUnit, expectedType) {
   const [rows] = await connection.query('SELECT * FROM inventory_items WHERE id = ? AND is_active = 1 FOR UPDATE', [itemId]);
   const item = rows[0];

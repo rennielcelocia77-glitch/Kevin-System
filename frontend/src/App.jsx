@@ -20,7 +20,8 @@ import Suppliers from './pages/Suppliers';
 import './styles.css';
 
 function Protected() { 
-  const { user } = useAuth(); 
+  const { user, loading } = useAuth();
+  if (loading) return <main className="page-section"><p className="muted">Restoring your session...</p></main>;
   return user ? <Layout /> : <Navigate to="/login" replace />; 
 }
 

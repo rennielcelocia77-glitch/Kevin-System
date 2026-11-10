@@ -1,12 +1,14 @@
 import { pool, withTransaction } from '../config/db.js';
-import { audit, businessError, positive } from './workflowHelpers.js';
+import { audit, businessError, currency, positive } from './workflowHelpers.js';
 
 export async function listLaborers() { const [rows] = await pool.query('SELECT id, name, contact_information, status, notes, created_at, updated_at FROM employees ORDER BY name'); return rows; }
 export async function createLaborer({ name, contactInformation, notes, userId }) {
   if (!name?.trim()) throw businessError('Laborer name is required', 'VALIDATION_ERROR');
-  const [result] = await pool.query('INSERT INTO employees (name, contact_information, notes) VALUES (?, ?, ?)', [name.trim(), contactInformation || null, notes || null]);
-  await pool.query(`INSERT INTO audit_logs (user_id, action, entity, entity_id, metadata) VALUES (?, 'LABORER_CREATED', 'employees', ?, ?)`, [userId, result.insertId, JSON.stringify({ name })]);
-  return { id: result.insertId, name: name.trim() };
+  return withTransaction(async connection => {
+    const [result] = await connection.query('INSERT INTO employees (name, contact_information, notes) VALUES (?, ?, ?)', [name.trim(), contactInformation || null, notes || null]);
+    await audit(connection, userId, 'LABORER_CREATED', 'employees', result.insertId, { name: name.trim() });
+    return { id: result.insertId, name: name.trim() };
+  });
 }
 export async function listLabor(filters = {}) {
   let query = `SELECT l.*, e.name AS laborer_name FROM labor_records l JOIN employees e ON e.id = l.laborer_id WHERE 1=1`; const params = [];
@@ -21,7 +23,8 @@ export async function getLabor(id) {
   return rows[0];
 }
 export async function createLabor({ laborerId, workDate, workType, description, quantity, unit, amount, paymentStatus = 'PAID', notes, userId }) {
-  const total = positive(amount, 'Labor amount');
+  const total = currency(positive(amount, 'Labor amount'), 'Labor amount');
+  if (total <= 0) throw businessError('Labor amount must be at least one cent', 'INVALID_AMOUNT');
   return withTransaction(async (connection) => {
     const [workers] = await connection.query('SELECT id FROM employees WHERE id = ? AND status = \'ACTIVE\'', [laborerId]);
     if (!workers[0]) throw businessError('Laborer not found', 'LABORER_NOT_FOUND', 404);
@@ -31,9 +34,14 @@ export async function createLabor({ laborerId, workDate, workType, description, 
   });
 }
 export async function updateLabor(id, { workType, description, quantity, unit, amount, paymentStatus, notes, userId }) {
-  const total = positive(amount, 'Labor amount');
+  const total = currency(positive(amount, 'Labor amount'), 'Labor amount');
+  if (total <= 0) throw businessError('Labor amount must be at least one cent', 'INVALID_AMOUNT');
   const statuses = ['UNPAID', 'PARTIALLY_PAID', 'PAID']; if (!statuses.includes(paymentStatus)) throw businessError('Invalid labor payment status', 'INVALID_PAYMENT_STATUS');
-  const [result] = await pool.query('UPDATE labor_records SET work_type = ?, description = ?, quantity = ?, unit = ?, total_amount = ?, payment_status = ?, notes = ? WHERE id = ?', [workType, description || null, quantity || null, unit || null, total, paymentStatus, notes || null, id]);
-  if (!result.affectedRows) throw businessError('Labor record not found', 'LABOR_NOT_FOUND', 404);
-  await audit(pool, userId, 'LABOR_UPDATED', 'labor_records', id, { amount: total }); return getLabor(id);
+  return withTransaction(async connection => {
+    const [result] = await connection.query('UPDATE labor_records SET work_type = ?, description = ?, quantity = ?, unit = ?, total_amount = ?, payment_status = ?, notes = ? WHERE id = ?', [workType, description || null, quantity || null, unit || null, total, paymentStatus, notes || null, id]);
+    if (!result.affectedRows) throw businessError('Labor record not found', 'LABOR_NOT_FOUND', 404);
+    await audit(connection, userId, 'LABOR_UPDATED', 'labor_records', id, { amount: total });
+    const [rows] = await connection.query('SELECT l.*, e.name AS laborer_name FROM labor_records l JOIN employees e ON e.id = l.laborer_id WHERE l.id = ?', [id]);
+    return rows[0];
+  });
 }

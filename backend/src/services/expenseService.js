@@ -1,41 +1,44 @@
 import { pool, withTransaction } from '../config/db.js';
+import { businessError, currency } from './workflowHelpers.js';
 
 export async function createExpense({ category, description, amount, expenseDate, deliveryId, referenceNumber, notes, userId }) {
-  if (amount <= 0) throw Object.assign(new Error('Amount must be greater than zero'), { code: 'INVALID_AMOUNT' });
+  const total = currency(amount, 'Expense amount');
+  if (total <= 0) throw businessError('Expense amount must be greater than zero', 'INVALID_AMOUNT');
   
   return withTransaction(async (connection) => {
     const [result] = await connection.query(`
       INSERT INTO expenses (category, description, amount, expense_date, delivery_id, reference_number, notes, created_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [category, description, amount, expenseDate, deliveryId || null, referenceNumber, notes, userId]);
+    `, [category, description, total, expenseDate, deliveryId || null, referenceNumber, notes, userId]);
     
     await connection.query(
       'INSERT INTO audit_logs (user_id, action, entity, entity_id, metadata) VALUES (?, ?, ?, ?, ?)',
-      [userId, 'EXPENSE_CREATED', 'expenses', result.insertId, JSON.stringify({ category, amount })]
+      [userId, 'EXPENSE_CREATED', 'expenses', result.insertId, JSON.stringify({ category, amount: total })]
     );
     return result.insertId;
   });
 }
 
 export async function createGasolineExpense({ quantityLiters, pricePerLiter, totalAmount, expenseDate, vehicleDescription, deliveryId, notes, userId }) {
-  if (totalAmount <= 0) throw Object.assign(new Error('Amount must be greater than zero'), { code: 'INVALID_AMOUNT' });
+  const total = currency(totalAmount, 'Expense amount');
+  if (total <= 0) throw businessError('Expense amount must be greater than zero', 'INVALID_AMOUNT');
   
   return withTransaction(async (connection) => {
     // Create the expense record
     const [expenseResult] = await connection.query(`
       INSERT INTO expenses (category, description, amount, expense_date, delivery_id, created_by)
       VALUES ('GASOLINE', ?, ?, ?, ?, ?)
-    `, [vehicleDescription ? `Gasoline - ${vehicleDescription}` : 'Gasoline', totalAmount, expenseDate, deliveryId || null, userId]);
+    `, [vehicleDescription ? `Gasoline - ${vehicleDescription}` : 'Gasoline', total, expenseDate, deliveryId || null, userId]);
     
     // Create the gasoline-specific record
     const [result] = await connection.query(`
       INSERT INTO gasoline_expenses (expense_id, quantity_liters, price_per_liter, total_amount, expense_date, vehicle_description, delivery_id, notes, created_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [expenseResult.insertId, quantityLiters, pricePerLiter, totalAmount, expenseDate, vehicleDescription, deliveryId || null, notes, userId]);
+    `, [expenseResult.insertId, quantityLiters, pricePerLiter, total, expenseDate, vehicleDescription, deliveryId || null, notes, userId]);
     
     await connection.query(
       'INSERT INTO audit_logs (user_id, action, entity, entity_id, metadata) VALUES (?, ?, ?, ?, ?)',
-      [userId, 'GASOLINE_RECORDED', 'gasoline_expenses', result.insertId, JSON.stringify({ totalAmount, quantityLiters })]
+      [userId, 'GASOLINE_RECORDED', 'gasoline_expenses', result.insertId, JSON.stringify({ totalAmount: total, quantityLiters })]
     );
     return result.insertId;
   });
